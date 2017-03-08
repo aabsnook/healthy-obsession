@@ -1,0 +1,18 @@
+/* app css stylesheet */
+
+body {
+    margin: 5%;
+    text-align: center;
+    background-color:bisque;
+}
+
+header {
+    font-size: 1.5em;
+    border: none;
+}
+
+.errorLabel {
+    margin: 1em 0;
+    width: 100%;
+    text-align: center;
+}
