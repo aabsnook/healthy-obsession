@@ -7,7 +7,7 @@ describe("the Node service", function() {
 
     beforeEach( inject(function(_NodeFactory_) {
         NodeFactory = _NodeFactory_;
-        home = NodeFactory.create();
+        home = NodeFactory.createRoot();
     }));
 
     describe("constructor", function() {
@@ -49,9 +49,9 @@ describe("the Node service", function() {
 
         it('succeeeds with override flag',
             function() {
-            expect(home.newChild("child", true)).not.toBeNull();
+            expect(home.newChild("child", {foo: "bar"}, true)).not.toBeNull();
             expect(home.numChildren).toEqual(1);
-            expect(home.getChild("child").numChildren).toEqual(0);
+            expect(home.getChild("child").content.foo).toEqual("bar");
             expect(grandChild.level).toEqual(1);
         });
 
@@ -102,6 +102,67 @@ describe("the Node service", function() {
         });
     });
 
+    describe("child grafting", function() {
+        let child, grandChild, greatGrandChild, stranger, sibling, cousin;
+        beforeEach( function() {
+            [home, child, grandChild, greatGrandChild] =
+                home.newChild("child").newChild("grandChild")
+                .newChild("greatGrandChild").getAncestry();
+            stranger = NodeFactory.createRoot("hello!");
+            sibling = stranger.newChild("sibling")
+            cousin = sibling.newChild("cousin");
+        });
+
+        it('attaches child to the new parent', function() {
+            stranger = home.graftChild(stranger, "sibling");
+            expect(home.numChildren).toBe(2);
+            expect(stranger.parent).toBe(home);
+            expect(cousin.level).toBe(3);
+            expect(stranger.numChildren).toBe(1);
+        });
+
+        it('throws an error if grafting root with no key', function() {
+            expect(function() {home.graftChild("stranger");}).toThrow();
+        });
+
+        it('if not overwriting, merges the nodes by combining children, '
+            + 'including recursively', function() {
+            stranger.newChild("grandChild").newChild("greatCousin");
+            home.graftChild(stranger, "child");
+            expect(home.numChildren).toBe(1);
+            expect(home.getChild("child").getChild("sibling")).not.toBeNull();
+            expect(home.getChild("child").getChild("grandChild")
+                .getChild("greatCousin")).not.toBeNull();
+            expect(home.getChild("child").getChild("grandChild")
+                .numChildren).toEqual(2);
+        });
+
+        it('merges content by Object.assign by default', function() {
+            child.content = {foo: "bar", foz: "baz"};
+            stranger.content = {foo: "baz", fudge: "sundae"};
+            home.graftChild(stranger, "child");
+            expect(home.getChild("child").content.foo).toEqual("baz");
+            expect(home.getChild("child").content.foz).toEqual("baz");
+            expect(home.getChild("child").content.fudge).toEqual("sundae");
+        });
+
+        it('accepts custom content merging functions & uses them', function() {
+            let concat = function(str1, str2) {return str1 + str2;};
+            home = NodeFactory.createRoot("hi", concat);
+            home.newChild("child", "goodbye! ");
+            home.graftChild(stranger, "child");
+            expect(home.getChild("child").content).toEqual("goodbye! hello!");
+        })
+
+        it('detects cycles created this way, as long as'
+           + ' the cycleCheck parameter isn\'t set to false', function() {
+            expect(function() {
+                greatGrandChild.graftChild(home, "evil")}).toThrow();
+            expect(function() {
+                home.graftChild(home, "evil")}).toThrow();
+        });
+    });
+
     describe("content function", function()  {
 
         it('lets you get content you put in', function() {
@@ -109,8 +170,8 @@ describe("the Node service", function() {
             expect(home.content.foo).toEqual("bar");
         });
 
-        it('starts out with an empty object for content', function() {
-            expect(home.content).toEqual({});
+        it('starts out with undefined content by default', function() {
+            expect(home.content).not.toBeDefined();
         });
     });
 
@@ -125,7 +186,7 @@ describe("the Node service", function() {
         });
 
         it('should add directory sublevels for each additional' +
-                'level of the tree', function() {
+                ' level of the tree', function() {
             let grandChild = home.newChild("child").newChild("grandchild");
             expect(grandChild.pathTo()).toEqual(["child", "grandchild"]);
             expect(grandChild.newChild("greatgrandchild").pathTo())

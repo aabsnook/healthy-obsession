@@ -10,25 +10,27 @@
                 }
 
                 /**
-                    Node.merge (private)
-                    This function will merge this node with otherNode given.
-                    We assume that this node and otherNode have the same
-                    parent and key, and that otherNode  (hence this is private - see graftChild
-                    for public-facing code that does this).
+                    Node.mergeIn (private)
+                    This function will merge in the child given into this node.
+                    We assume that this node already has a child with key
+                    as key.
                     See graftChild for full details.
                     @param {node} newChild - the new child to copy
+                    @param {string} key - the key to copy in
                 */
-                merge(newChild) {
+                mergeIn(newChild, key) {
                     let originalNode = this.node[_properties]
-                        .children[newChild.key];
+                        .children[key];
 
                     //Merge content
-                    originalNode.mergeContent(newChild.content);
+                    originalNode.content
+                        = originalNode.mergeContent(newChild.content);
 
                     angular.forEach(newChild[_properties].children,
-                        function(val, key) {
-                        originalNode.graftChild(val, key);
+                        function(val, nKey) {
+                        originalNode[_methods].graftChildHelp(val, nKey);
                     });
+                    return originalNode;
                 }
 
                 /**
@@ -71,12 +73,62 @@
                         return true;
                     }
                     if (this.node.parent) {
-                        return this.node.parent.hasAncestor(target);
+                        return this.node.parent[_methods].hasAncestor(target);
                     }
                     else {
                         return false;
                     }
                 }
+
+                /**
+                    Node.addNodeChild (private)
+                    Helper method for adding a child, executes logic
+                    common to all child addition.
+                    @param {node} the node to add
+                    @param {key} the key to add it at
+                    @param {boolean} overwrite - ok to overwrite?
+                */
+                addNodeChild(node, key, overwrite) {
+                    if (this.node[_properties].children[key]) {
+                        if (!overwrite) {
+                            return null;
+                        }
+                        else {
+                            this.node.removeChild(key);
+                        }
+                    }
+
+                    this.node[_properties].numChildren++;
+                    this.node[_properties].children[key] = node;
+                    return this.node[_properties].children[key];
+                }
+
+                /**
+                   Node.graftChildHelp (private)
+                   Helper for graftChild - see its documentation.
+                   Helper version doesn't do validation, which is useful
+                   for recursive calls to graftChild, but we don't want to
+                   expose the ability to add non-root nodes.
+                   @param {node} child - see below
+                   @param {string} key - see below
+                   @param {boolean} overwrite - see below
+                   @return {node} see below
+                */
+                graftChildHelp(child, key, overwrite) {
+
+                    if (!overwrite && this.node[_properties].children[key]) {
+                        return this.node[_methods].mergeIn(child, key);
+                    }
+                    else {
+                        child[_properties].parent = this.node;
+                        child[_properties].key = key;
+                        child[_properties].root = this.node.root;
+
+                        return this.node[_methods]
+                            .addNodeChild(child, key, overwrite);
+                    }
+                }
+
             }
 
             /**
@@ -96,22 +148,25 @@
                     @param {object} content - The node's content
                         {} by default.
                     @param {function} mergeFunction -
-                        The function to merge content.
-                        if a node is grafted onto this node that has the same
-                        key as an existing child of this node.
+                        The function to merge content on this tree.
+                        This function only matters for the root of the tree,
+                        as all ancestors will consult the root for this.
+                        Used if a node is grafted into this tree with a key
+                        equal to another key on the parent.
                         Uses Object.assign by default.
                         Must take parameters: (oldContent, newContent)
                 */
-                constructor(parent, key, content, mergeFunction) {
+                constructor(parent, key, content, root, mergeFunction) {
                     this[_methods] = new _NodeMethods(this);
                     this[_properties] = {
                         "key": key,
                         "parent": (parent ? parent : null),
                         "children": {},
                         "numChildren": 0,
-                        "content": {},
-                        "mergeFunction": mergeFunction
-                    }
+                        "content": content,
+                        "mergeFunction": mergeFunction,
+                        "root": root || this
+                    };
                 };
 
                 /**
@@ -164,6 +219,15 @@
                 }
 
                 /**
+                    Node.root
+                    Accessor for root
+                    @return {node} the root of this node
+                */
+                get root() {
+                    return this[_properties].root;
+                }
+
+                /**
                    Node.getChild
                    Gets the child with this key, or null otherwise.
                    @param {object} the key of this child
@@ -174,6 +238,7 @@
                     if (key === undefined || key === null) {
                         throw new Error("Tried to get a non-key.");
                     }
+
                     if (this[_properties].children[key]) {
                         return this[_properties].children[key];
                     }
@@ -190,22 +255,13 @@
                         Defaults to false.
                     @return {node} a pointer to the created node.
                 */
-                newChild(key, overwrite = false) {
+                newChild(key, content, overwrite = false) {
                     if (key === undefined || key === null) {
                         throw new Error("Tried to make child with no key.");
                     }
-                    if (this[_properties].children[key]) {
-                        if (!overwrite) {
-                            return null;
-                        }
-                        else {
-                            this.removeChild(key);
-                        }
-                    }
+                    let newNode = new Node(this, key, content, this.root);
 
-                    this[_properties].numChildren++;
-                    this[_properties].children[key] = new Node(this, key);
-                    return this[_properties].children[key];
+                    return this[_methods].addNodeChild(newNode, key, overwrite);
                 }
 
                 /**
@@ -218,67 +274,56 @@
                         For properties not managed by this class, merge will
                         overwrite existing properties with child's properties,
                         but conflicts can
-                    @param {node} child - The child to graft
-                    @param {object} newKey - The new key. If omitted, will
-                        use the old key. If that doesn't exist, throws an
-                        exception.
-                    @param {boolean} cycleCheck - Check for cycle?
-                        Defaults to true. Will throw an exception if a cycle
-                        is created. Setting this to false improves performance,
-                        but could cause difficult-to-trace bugs if the calling
-                        program isn't careful.
+                    @param {node} child - The child to graft.
+                        This child must be a root node.
+                        NOTE: may or may not be reused by this function.
+                        Don't use this pointer again - suggest
+                        child = node.graftChild(child, ...) if you want to
+                        use it immediately.
+                    @param {object} key - The key to add the child under
                     @param {boolean} overwrite - Allow overwriting?
                         Defaults to false.
-                    @return {node} - The grafted child, or null
-                        if the operation failed (say, because it created
-                        a cycle)
+                    @return {node} - The new node grafted onto this node. Note
+                        that this does NOT change child (or any pointers to it).
+                        Best practice:
                 */
-                graftChild(child, newKey, cycleCheck, overwrite) {
-                    let key = newKey || child.key();
-                    if (!child || !key) {
-                        throw new Exception("Attempted to graft a null child"
-                                + " or graft a rootless child with no key");
-                    }
-                    if (child[_properties].parent) {
-                        child[_properties].parent.removeChild(child.key());
+                graftChild(child, key, overwrite = false)
+                {
+                    if (!child) {
+                        throw new Error("Attempted to graft a non-node " + child);
                     }
 
-                    child[_properties].parent = this;
-                    child[_properties].key = key;
-
-                    if (!this[_properties].children[key]) {
-                        this[_properties].children[key] = child;
-                        this[_properties].numChildren++;
-                        return child;
+                    if (!key) {
+                        throw new Error("graftChild requires a key.");
                     }
 
-                    else {
-                        if (cycleCheck || this[_methods].hasAncestor(child)) {
-                            throw new Error("Attempted to graft a node "
-                                    + "onto its child!");
-                        }
-                        if (!overwrite) {
-                            this[_methods].merge(child);
-                        }
-                        else {
-                            this[_properties].children[key] = child;
-                        }
-                        return child;
+                    if (child.parent !== null) {
+                        throw new Error("Attempted to graft a non-root node.");
                     }
+
+                    if (child === this.root) {
+                        throw new Error("Tried to graft a node to one of its "
+                                + "children!");
+                    }
+
+                    return this[_methods].graftChildHelp(child, key, overwrite);
                 }
 
                 /**
                     Node.mergeContent
-                    Merges this node's content with other content.
-                    @return {object} the new content object
+                    Returns this node's content merged with the passed-in
+                    content according to this node's tree's content merge
+                    function. Will not modify this node's content.
+                    @param {object} the content to merge in
+                    @return {object} the merged content
                 */
                 mergeContent(newContent) {
-                    if (this[_properties].mergeFunction) {
-                        return this[_properties].mergeFunction(this.content,
-                                    newContent);
+                    if (this.root[_properties].mergeFunction) {
+                        return this.root[_properties].mergeFunction.call(
+                                null, this.content, newContent);
                     }
                     else {
-                        return Object.assign(this.content, newContent);
+                        return Object.assign({}, this.content, newContent);
                     }
                 }
 
@@ -434,8 +479,11 @@
                 };*/
             };
         return {
-            create: function(parent, key, properties, content) {
-                return new Node(parent, key, properties, content);
+            createRoot: function(content, mergeFunction) {
+                if (mergeFunction && typeof mergeFunction !== "function") {
+                    throw new Error("Non-function used as mergeFunction.");
+                }
+                return new Node(null, undefined, content, undefined, mergeFunction);
             },
         };
     });
