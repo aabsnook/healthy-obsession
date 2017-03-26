@@ -25,6 +25,10 @@ describe("the Node service", function() {
             expect(home.level).toEqual(0);
         });
 
+        it('has itself as its root', function() {
+            expect(home.root).toEqual(home);
+        });
+
     });
 
     describe("children addition", function() {
@@ -35,8 +39,22 @@ describe("the Node service", function() {
                 .newChild("greatGrandChild").getAncestry();
         });
 
+        it('accepts all keys except for null and undefined', function() {
+            expect(home.newChild(false)).toBeTruthy();
+            expect(home.newChild(["hello", "kitty"])).toBeTruthy();
+            expect(home.newChild(0)).toBeTruthy();
+            expect(function() {home.newChild(null);}).toThrow();
+            expect(function() {home.newChild(undefined);}).toThrow();
+        });
+
         it('lets you retrieve children you add', function() {
             expect(home.getChild("child")).not.toBeNull();
+        });
+
+        it('gives decendants the same root as parents', function() {
+            expect(child.root).toEqual(home);
+            expect(grandChild.root).toEqual(home);
+            expect(greatGrandChild.root).toEqual(home);
         });
 
         it('returns null and fails if child is there w/o override flag',
@@ -47,7 +65,7 @@ describe("the Node service", function() {
             expect(grandChild.level).toEqual(2);
         });
 
-        it('succeeeds with override flag',
+        it('succeeeds and overwrites with override flag',
             function() {
             expect(home.newChild("child", {foo: "bar"}, true)).not.toBeNull();
             expect(home.numChildren).toEqual(1);
@@ -55,8 +73,9 @@ describe("the Node service", function() {
             expect(grandChild.level).toEqual(1);
         });
 
-        it('gives childen a parent of this node', function() {
+        it('gives childen a parent of node they were added to', function() {
             expect(child.parent).toEqual(home);
+            expect(grandChild.parent).toEqual(child);
         });
 
         it('assigns level to be 1 greater than the last', function() {
@@ -121,8 +140,16 @@ describe("the Node service", function() {
             expect(stranger.numChildren).toBe(1);
         });
 
-        it('throws an error if grafting root with no key', function() {
+        it('throws an error on a non-node input', function() {
+            expect(function() {home.graftChild("hello");}).toThrow();
+            expect(function() {home.graftChild(false);}).toThrow();
+            expect(function() {home.graftChild({foo: "bar"});}).toThrow();
+        });
+
+        it('throws an error if grafting root with undefined or null key',
+            function() {
             expect(function() {home.graftChild("stranger");}).toThrow();
+            expect(function() {home.graftChild("stranger", null);}).toThrow();
         });
 
         it('if not overwriting, merges the nodes by combining children, '
@@ -154,10 +181,7 @@ describe("the Node service", function() {
             expect(home.getChild("child").content).toEqual("goodbye! hello!");
         })
 
-        it('detects cycles created this way, as long as'
-           + ' the cycleCheck parameter isn\'t set to false', function() {
-            expect(function() {
-                greatGrandChild.graftChild(home, "evil")}).toThrow();
+        it('throws an error if node grafted to itself', function() {
             expect(function() {
                 home.graftChild(home, "evil")}).toThrow();
         });

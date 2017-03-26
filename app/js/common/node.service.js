@@ -285,7 +285,6 @@
                         Defaults to false.
                     @return {node} - The new node grafted onto this node. Note
                         that this does NOT change child (or any pointers to it).
-                        Best practice:
                 */
                 graftChild(child, key, overwrite = false)
                 {
@@ -293,7 +292,7 @@
                         throw new Error("Attempted to graft a non-node " + child);
                     }
 
-                    if (!key) {
+                    if (key === undefined || key === null) {
                         throw new Error("graftChild requires a key.");
                     }
 
